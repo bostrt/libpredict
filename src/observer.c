@@ -30,8 +30,6 @@ void predict_destroy_observer(predict_observer_t *obs)
 }
 
 
-#define VISIBILITY_SUN_ELE_UPPER_THRESH -12.0
-#define VISIBILITY_ORBIT_ELE_LOWER_THRESH 0.0
 /**
  * \brief Calculates range, azimuth, elevation and relative velocity.
  *
@@ -50,7 +48,7 @@ void predict_observe_orbit(const predict_observer_t *observer, const struct pred
 	obs->visible = false;
 	struct predict_observation sun_obs;
 	predict_observe_sun(observer, orbit->time, &sun_obs);
-	if (!(orbit->eclipsed) && (sun_obs.elevation*180.0/M_PI < VISIBILITY_SUN_ELE_UPPER_THRESH) && (obs->elevation*180.0/M_PI > VISIBILITY_ORBIT_ELE_LOWER_THRESH)) {
+	if (!(orbit->eclipsed) && (sun_obs.elevation*180.0/M_PI < NAUTICAL_TWILIGHT_SUN_ELEVATION) && (obs->elevation*180.0/M_PI > 0)) {
 		obs->visible = true;
 	}
 	obs->time = orbit->time;
@@ -94,7 +92,7 @@ void observer_calculate(const predict_observer_t *observer, double time, const d
 	double range_length = vec3_length(range);
 	double range_rate_length = vec3_dot(range, rgvel) / range_length;
 
-	double theta_dot = 2*M_PI*omega_E/secday;
+	double theta_dot = 2*M_PI*EARTH_ROTATIONS_PER_SIDERIAL_DAY/SECONDS_PER_DAY;
 	double sin_lat = sin(geodetic.lat);
 	double cos_lat = cos(geodetic.lat);
 	double sin_theta = sin(geodetic.theta);
@@ -177,7 +175,7 @@ void predict_observe_sun(const predict_observer_t *observer, double time, struct
 	double sun_azi = solar_set.x; 
 	double sun_ele = solar_set.y;
 
-	double sun_range = 1.0+((solar_set.z-AU)/AU);
+	double sun_range = 1.0+((solar_set.z-ASTRONOMICAL_UNIT_KM)/ASTRONOMICAL_UNIT_KM);
 	double sun_range_rate = 1000.0*solar_set.w;
 
 	Calculate_LatLonAlt(jul_utc, solar_vector, &solar_latlonalt);
@@ -394,8 +392,6 @@ void predict_observe_moon(const predict_observer_t *observer, double time, struc
 
 }
 
-#define ELEVATION_ZERO_TOLERANCE 0.3 //threshold for fine-tuning of AOS/LOS
-#define DAYNUM_MINUTE 1.0/(24*60) //number of days corresponding to a minute
 double predict_next_aos(const predict_observer_t *observer, const predict_orbital_elements_t *orbital_elements, double start_utc)
 {
 	double ret_aos_time = 0;
@@ -420,7 +416,7 @@ double predict_next_aos(const predict_observer_t *observer, const predict_orbita
 		//skip the rest of the pass if the satellite is currently in range, since we want the _next_ AOS.
 		if (obs.elevation > 0.0) {
 			curr_time = predict_next_los(observer, orbital_elements, curr_time);
-			curr_time += DAYNUM_MINUTE*20; //skip 20 minutes. LOS might still be within the elevation threshold. (rough quickfix from predict)
+			curr_time += 1.0/(MINUTES_PER_DAY*1.0)*20; //skip 20 minutes. LOS might still be within the elevation threshold. (rough quickfix from predict)
 			predict_orbit(orbital_elements, &orbit, curr_time);
 			predict_observe_orbit(observer, &orbit, &obs);
 		}
@@ -434,7 +430,7 @@ double predict_next_aos(const predict_observer_t *observer, const predict_orbita
 		}
 
 		//fine tune the results until the elevation is within a low enough threshold
-		while (fabs(obs.elevation*180/M_PI) > ELEVATION_ZERO_TOLERANCE) {
+		while (fabs(obs.elevation*180/M_PI) > AOSLOS_HORIZON_THRESHOLD) {
 			time_step = obs.elevation*180.0/M_PI*sqrt(orbit.altitude)/530000.0;
 			curr_time -= time_step;
 			predict_orbit(orbital_elements, &orbit, curr_time);
@@ -510,7 +506,7 @@ double predict_next_los(const predict_observer_t *observer, const predict_orbita
 			curr_time += time_step;
 			predict_orbit(orbital_elements, &orbit, curr_time);
 			predict_observe_orbit(observer, &orbit, &obs);
-		} while (fabs(obs.elevation*180.0/M_PI) > ELEVATION_ZERO_TOLERANCE);
+		} while (fabs(obs.elevation*180.0/M_PI) > AOSLOS_HORIZON_THRESHOLD);
 
 		ret_los_time = curr_time;
 	}
@@ -535,14 +531,6 @@ double elevation_derivative(const predict_observer_t *observer, const predict_or
 	return observation.elevation_rate;
 }
 
-#include <float.h>
-
-//Threshold used for comparing lower and upper brackets in find_max_elevation
-#define TIME_THRESHOLD FLT_EPSILON
-
-//Maximum number of iterations in find_max_elevation
-#define MAX_ITERATIONS 10000
-
 /**
  * Find maximum elevation bracketed by input lower and upper time.
  *
@@ -556,7 +544,7 @@ struct predict_observation find_max_elevation(const predict_observer_t *observer
 {
 	double max_ele_time_candidate = (upper_time + lower_time)/2.0;
 	int iteration = 0;
-	while ((fabs(lower_time - upper_time) > TIME_THRESHOLD) && (iteration < MAX_ITERATIONS)) {
+	while ((fabs(lower_time - upper_time) > MAXELE_TIME_EQUALITY_THRESHOLD) && (iteration < MAXELE_MAX_NUM_ITERATIONS)) {
 		max_ele_time_candidate = (upper_time + lower_time)/2.0;
 
 		//calculate derivatives for lower, upper and candidate
@@ -616,8 +604,8 @@ struct predict_observation predict_at_max_elevation(const predict_observer_t *ob
 	struct predict_observation candidate_center = find_max_elevation(observer, orbital_elements, lower_time, upper_time);
 
 	//bracket by a combination of the found candidate above and either AOS or LOS (will thus cover solutions within [aos, candidate] and [candidate, los])
-	struct predict_observation candidate_lower = find_max_elevation(observer, orbital_elements, candidate_center.time - TIME_THRESHOLD, upper_time);
-	struct predict_observation candidate_upper = find_max_elevation(observer, orbital_elements, lower_time, candidate_center.time + TIME_THRESHOLD);
+	struct predict_observation candidate_lower = find_max_elevation(observer, orbital_elements, candidate_center.time - MAXELE_TIME_EQUALITY_THRESHOLD, upper_time);
+	struct predict_observation candidate_upper = find_max_elevation(observer, orbital_elements, lower_time, candidate_center.time + MAXELE_TIME_EQUALITY_THRESHOLD);
 
 	//return the best candidate
 	if ((candidate_center.elevation > candidate_lower.elevation) && (candidate_center.elevation > candidate_upper.elevation)) {
