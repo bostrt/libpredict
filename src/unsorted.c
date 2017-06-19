@@ -474,7 +474,7 @@ void Calculate_LatLonAlt(double time, const double pos[3],  geodetic_t *geodetic
 	double r, e2, phi, c;
 	
 	//Convert to julian time:
-	time += 2444238.5;
+	time += JULIAN_TIME_DIFF;
 
 	geodetic->theta = AcTan(pos[1], pos[0]); /* radians */
 	geodetic->lon = FMod2p(geodetic->theta-ThetaG_JD(time)); /* radians */
