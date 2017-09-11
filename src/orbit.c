@@ -3,7 +3,9 @@
 #include <string.h>
 #include "defs.h"
 #include "unsorted.h"
+#ifdef SDP4_SUPPORT
 #include "sdp4.h"
+#endif
 #include "sgp4.h"
 #include "sun.h"
 
@@ -55,8 +57,9 @@ predict_orbital_elements_t* predict_parse_tle(const char *tle_line_1, const char
 
 	/* Select a deep-space/near-earth ephemeris */
 	if (twopi/xnodp/xmnpda >= 0.15625) {
+#ifdef SDP4_SUPPORT
 		m->ephemeris = EPHEMERIS_SDP4;
-		
+
 		// Allocate memory for ephemeris data
 		m->ephemeris_data = malloc(sizeof(struct _sdp4));
 
@@ -66,10 +69,12 @@ predict_orbital_elements_t* predict_parse_tle(const char *tle_line_1, const char
 		}
 		// Initialize ephemeris data structure
 		sdp4_init(m, (struct _sdp4*)m->ephemeris_data);
-
+#else
+	return NULL;
+#endif
 	} else {
 		m->ephemeris = EPHEMERIS_SGP4;
-		
+
 		// Allocate memory for ephemeris data
 		m->ephemeris_data = malloc(sizeof(struct _sgp4));
 
@@ -114,7 +119,7 @@ double predict_apogee(const predict_orbital_elements_t *m)
 	double sma = 331.25*exp(log(1440.0/m->mean_motion)*(2.0/3.0));
 	return sma*(1.0+m->eccentricity)-xkmper;
 }
-		
+
 double predict_perigee(const predict_orbital_elements_t *m)
 {
 	double xno = m->mean_motion*twopi/xmnpda;
@@ -163,7 +168,7 @@ int predict_orbit(const predict_orbital_elements_t *orbital_elements, struct pre
 {
 	/* Set time to now if now time is provided: */
 	if (utc == 0) utc = predict_to_julian(time(NULL));
-	
+
 	/* Satellite position and velocity vectors */
 	vec3_set(m->position, 0, 0, 0);
 	vec3_set(m->velocity, 0, 0, 0);
@@ -180,9 +185,11 @@ int predict_orbit(const predict_orbital_elements_t *orbital_elements, struct pre
 	/* Call NORAD routines according to deep-space flag. */
 	struct model_output output;
 	switch (orbital_elements->ephemeris) {
+#ifdef SDP4_SUPPORT
 		case EPHEMERIS_SDP4:
 			sdp4_predict((struct _sdp4*)orbital_elements->ephemeris_data, tsince, &output);
 			break;
+#endif
 		case EPHEMERIS_SGP4:
 			sgp4_predict((struct _sgp4*)orbital_elements->ephemeris_data, tsince, &output);
 			break;
@@ -221,7 +228,7 @@ int predict_orbit(const predict_orbital_elements_t *orbital_elements, struct pre
 
 	// Calculate footprint
 	m->footprint = 2.0*xkmper*acos(xkmper/(xkmper + m->altitude));
-	
+
 	// Calculate current number of revolutions around Earth
 	double temp = twopi/xmnpda/xmnpda;
 	double age = julTime - jul_epoch;
@@ -258,7 +265,7 @@ bool is_eclipsed(const double pos[3], const double sol[3], double *depth)
 	vec3_sub(sol, pos, Rho);
 	double sd_sun = ArcSin(sr / vec3_length(Rho));
 	vec3_mul_scalar(pos, -1, earth);
-	
+
 	double delta = ArcCos( vec3_dot(sol, earth) / vec3_length(sol) / vec3_length(earth) );
 	*depth = sd_earth - sd_sun - delta;
 

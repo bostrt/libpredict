@@ -1,6 +1,10 @@
-add_library(predict SHARED orbit.c sun.c observer.c sdp4.c sgp4.c refraction.c unsorted.c julian_date.c version.c)
-
-add_library(predict_static STATIC orbit.c sun.c observer.c sdp4.c sgp4.c refraction.c unsorted.c julian_date.c)
+if(SDP4_SUPPORT)
+  add_library(predict SHARED orbit.c sun.c observer.c sdp4.c sgp4.c refraction.c unsorted.c julian_date.c version.c)
+  add_library(predict_static STATIC orbit.c sun.c observer.c sdp4.c sgp4.c refraction.c unsorted.c julian_date.c)
+else()
+  add_library(predict SHARED orbit.c sun.c observer.c sgp4.c refraction.c unsorted.c julian_date.c version.c)
+  add_library(predict_static STATIC orbit.c sun.c observer.c sgp4.c refraction.c unsorted.c julian_date.c)
+endif()
 
 set_target_properties(predict_static PROPERTIES OUTPUT_NAME predict)
 

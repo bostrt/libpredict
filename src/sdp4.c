@@ -819,4 +819,3 @@ void sdp4_deep(const struct _sdp4 *m, int ientry, const deep_arg_fixed_t * deep_
 		return;
 	}
 }
-

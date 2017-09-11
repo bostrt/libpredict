@@ -35,6 +35,13 @@ set(LIBPREDICT_LIBRARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/src)
 # Testdata location
 set(LIBPREDICT_TEST_DATA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tests/data)
 
+# SDP4 support enabled by default
+set(SDP4_SUPPORT 0)
+
+if(SDP4_SUPPORT)
+  add_definitions( -DSDP4_SUPPORT)
+endif()
+
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror")
 
 add_subdirectory(include)
